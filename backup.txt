@@ -1,0 +1,414 @@
+import React, {Component, useState, useEffect} from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Image, Modal, TextInput, Alert, NativeEventEmitter, NativeModules } from 'react-native';
+import BleManager from 'react-native-ble-manager';
+//import { BleManager, Characteristic } from "react-native-ble-plx";
+
+const BleManagerModule = NativeModules.BleManager;
+const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
+
+export default class App extends Component {
+  constructor(props){
+    super(props);
+    this.state={
+      modalHistorico:false,
+      modalNovaMedicao:false,
+      modalAtual:false,
+      atualInativo:true,
+      tempInicial:22,
+      tempFinal:0,
+      tempo:0,
+      info: "", 
+      values: {},
+      data: '',
+    };
+    // BLE caracteristicas
+    this.ThermometerService  = "00000001-710e-4a5b-8d75-3e5b444bc3cf"
+    this.TempCharacteristic  = "00000002-710e-4a5b-8d75-3e5b444bc3cf"
+    this.UnitCharacteristic  = "00000003-710e-4a5b-8d75-3e5b444bc3cf"
+    this.StartCharacteristic = "00000004-710e-4a5b-8d75-3e5b444bc3cf"
+    this.DataCharacteristic  = "00000005-710e-4a5b-8d75-3e5b444bc3cf"
+
+    // modais
+    this.inHistorico = this.inHistorico.bind(this);
+    this.outHistorico = this.outHistorico.bind(this);
+    this.inNovaMedicao = this.inNovaMedicao.bind(this);
+    this.outNovaMedicao = this.outNovaMedicao.bind(this);
+    this.inAtual = this.inAtual.bind(this);
+    this.outAtual = this.outAtual.bind(this);
+    
+    // this.comecar = this.comecar.bind(this);
+
+  }
+  
+  // config caracteristicas
+  // serviceUUID(num) {
+  //   return this.prefixUUID + num + "0" + this.suffixUUID
+  // }
+  // notifyUUID(num) {
+  //   return this.prefixUUID + num + "1" + this.suffixUUID
+  // }
+  // writeUUID(num) {
+  //   return this.prefixUUID + num + "2" + this.suffixUUID
+  // }
+
+  // funcóes uteis para facilitar 
+  // info(message) {
+  //   this.setState({info: message})
+  // }
+  // error(message) {
+  //   this.setState({info: "ERROR: " + message})
+  // }
+  // updateValue(key, value) {
+  //   this.setState({values: {...this.state.values, [key]: value}})
+  // }
+
+  // funcionamento dos modais
+  inAtual(){
+    this.setState({modalAtual:true});
+    this.setState({modalNovaMedicao:false});
+    //mudar depois, atualInativo apenas quando rodar e desligar quando acabar
+    this.setState({atualInativo:false});
+  }
+  outAtual(){
+    this.setState({modalAtual:false});
+  }
+  inNovaMedicao(){
+    this.setState({modalNovaMedicao:true});
+  }
+  outNovaMedicao(){
+    this.setState({modalNovaMedicao:false});
+  }
+  inHistorico(){
+    this.setState({modalHistorico:true});
+  }
+  outHistorico(){
+    this.setState({modalHistorico:false});
+  }
+
+  // //Scaneando dispositivos
+  // scanAndConnect(){
+  //   this.manager.startDeviceScan(null, null, (error, device) => {
+
+  //     if (error){
+  //       // Handle error (scannin irá parar sozinho)
+  //       return 2;
+  //     }
+  //     // Procurando o dispositivo por data ou outro criterio
+  //     if (device.name === 'MeDifusi' ){
+  //       // se encontrou conecta ao dispositivo , descobre caravristicas e notificaçoes
+  //       this.info("Conectando com Raspberry")
+  //       this.manager.stopDeviceScan()
+  //       device.connect()
+  //         .then((device) => {
+  //           this.info("Descobrindo serviços e caracteristicas")
+  //           return device.discoverAllServicesAndCharacteristics()
+  //         })
+  //         .then((device) => {
+  //           this.info("Configurando notificaçoes")
+  //           // return this.setupNotifications(device)
+            
+  //           // READING
+  //           // device.readCharacteristicForService(
+  //           //   this.ThermometerService, //serviceUUID: UUID
+  //           //   this.TempCharacteristic, //characteristicUUID: UUID,
+  //           //   null                     //transactionId: ?TransactionId
+  //           // )//: Promise<Characteristic>                         //: Promise<Characteristic>
+            
+
+  //           // WRITING
+  //           // device.writeCharacteristicWithResponseForService(
+  //           //   this.ThermometerService,  //serviceUUID: UUID,
+  //           //   this.StartCharacteristic, //characteristicUUID: UUID,
+  //           //   data,                     //valueBase64: Base64,
+  //           //   null                      //transactionId: ?TransactionId
+  //           // )                           //: Promise<Characteristic>
+  //         })
+  //         .then(() => {
+  //           this.info("Conectado bonitinho")
+  //         }, (error) => {
+  //           this.error(error.message)
+  //         })
+  //     }
+  //   });
+  // }
+
+  // ACHO Q NAO PRECISA NO MOMENTO
+  // Enable notifications for specified sensor by writing value of 0x01 to configuration characteristic. 
+  // After write is completed sensor is activated and ready for listening to it's values:
+  // async setupNotifications(device) {
+  //   for (const id in this.sensors) {
+  //     const service = this.serviceUUID(id)
+  //     const characteristicW = this.writeUUID(id)
+  //     const characteristicN = this.notifyUUID(id)
+
+  //     const characteristic = await device.writeCharacteristicWithResponseForService(
+  //       service, characteristicW, "AQ==" /* 0x01 in hex */
+  //     )
+
+  //     device.monitorCharacteristicForService(service, characteristicN, (error, characteristic) => {
+  //       if (error) {
+  //         this.error(error.message)
+  //         return
+  //       }
+  //       this.updateValue(characteristic.uuid, characteristic.value)
+  //     })
+  //   }
+  // }
+  
+  // // First of all we need to wait for BLE stack to init properly.
+  // UNSAFE_componentWillMount(){
+  //   // This step is required on iOS if we want to use it very early.
+  //   if (Platform.OS === 'ios') {
+  //     this.manager.onStateChange((state) => {
+  //       if (state === 'PoweredOn') {
+  //         this.scanAndConnect()
+  //       }
+  //     })
+  //   } else {
+  //     this.scanAndConnect()
+  //   }
+  // }
+  
+  render(){
+    const [isScanning, setIsScanning] = useState(false);
+    const peripherals = new Map();
+    const [list, setList] = useState([]);
+
+    const startScan = () => {
+      if(!isScanning){
+        BleManager.scan([], 3, true).then((results) => {
+          console.log('Scanning...')
+        });
+      }
+    }
+
+    function comecar(){
+      let time = this.state.tempo;
+      let tempeFinal = this.state.tempFinal;
+      if (time > 0 && tempeFinal >= 33) {
+        this.setState ({data : this.state.tempo + ' ' + this.state.tempFinal});
+        device.readCharacteristicForService(
+          serviceUUID = this.ThermometerService,
+          characteristicUUID = this.TempCharacteristic,
+          null
+        ) .then(() => {
+            // Success code
+            console.log("Opa entrou na leitura");
+          })
+          .catch((error) => {
+            // Failure code
+            console.log("The user refuse to enable bluetooth");
+            this.error(error.message);
+          });
+  
+        this.inAtual();
+  
+      }
+      else{
+        Alert.alert('Atenção','Por favor tempo maior que zero e temperatura final acima da ambiente',[
+          {text: 'Entendido', onPress:() => console.log('alert closed')}
+        ]);
+      }
+    }
+    return (
+      <View style={styles.container}>
+        
+        {/* Menu de inicio */}
+        <View style={styles.header} >
+          <TouchableOpacity style={styles.btnHeader}>
+            <Image 
+            source={require('./src/menu.png')}
+            style={styles.imgHeader}
+            />
+          </TouchableOpacity>
+          <Text style={styles.titulo} > MeDifusi </Text>
+          <TouchableOpacity style={styles.btnHeader}>
+            <Image 
+            source={require('./src/gear.png')}
+            style={styles.imgHeader}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.area}>
+          <TouchableOpacity style={styles.btn}>
+            <Text style={styles.textoBtn}> Bluetooth </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btn}>
+            <Text style={styles.textoBtn} onPress={this.inNovaMedicao} > Nova Medição </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btn}>
+            <Text style={styles.textoBtn} onPress={this.inHistorico}> Histórico </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btn} onPress={this.inAtual} disabled={this.state.atualInativo} >
+            <Text style={styles.textoBtn}> Atual </Text>
+          </TouchableOpacity>
+          <View >
+            <View>
+              <Text> {this.state.info}</Text>
+              <Text>{this.state.info}</Text>
+              {/* device.readCharacteristicForService(
+                serviceUUID: this.ThermometerService,
+                characteristicUUID: this.TempCharacteristic,
+                transactionId: ?TransactionId 
+              ): Promise<Characteristic></Characteristic> */}
+            </View>
+          </View>
+        </View>
+
+        {/* Modal Historico */}
+        <Modal animationType="fade" visible={this.state.modalHistorico}>
+          <View style={styles.container}>
+            <View style={styles.header} >
+              <TouchableOpacity style={styles.btnHeader} onPress={this.outHistorico}>
+                <Image 
+                  source={require('./src/seta.png')}
+                  style={styles.imgHeader}
+                  />
+              </TouchableOpacity>
+              <Text style={styles.titulo} >Historico</Text>
+              <TouchableOpacity style={styles.btnHeader}>
+                <Image 
+                source={require('./src/gear.png')}
+                style={styles.imgHeader}
+                />
+              </TouchableOpacity>
+            </View>
+            <View >
+              <Text > Dados historico .....</Text>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal Nova Medição */}
+        <Modal animationType="fade" visible={this.state.modalNovaMedicao}>
+          <View style={styles.container}>
+            <View style={styles.header} >
+              <TouchableOpacity style={styles.btnHeader} onPress={this.outNovaMedicao}>
+                <Image 
+                  source={require('./src/seta.png')}
+                  style={styles.imgHeader}
+                  />
+              </TouchableOpacity>
+              <Text style={styles.titulo} >Nova Medição</Text>
+              <TouchableOpacity style={styles.btnHeader}>
+                <Image 
+                source={require('./src/gear.png')}
+                style={styles.imgHeader}
+                />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.area}>
+              {/* <Text style={styles.subtitle}>Preencha os campos</Text> */}
+              <View style={styles.areaInput}>
+                <Text style={styles.txt}>Temperatura Inicial: </Text>
+                <Text style={styles.txt}>{this.state.tempInicial}ºC</Text>
+              </View>
+              <View style={styles.areaInput}>
+                <Text style={styles.txt}>Temperatura Final: </Text>
+                <TextInput style={styles.input} placeholder="ºC"
+                keyboardType="numeric"
+                onChangeText={(texto) => this.setState({tempFinal:texto})}
+                />
+              </View>
+              <View style={styles.areaInput}>
+                <Text style={styles.txt}>Tempo: </Text>
+                <TextInput style={styles.input} placeholder="minutos"
+                keyboardType="numeric"
+                onChangeText={(texto) => this.setState({tempo:texto})}
+                />
+              </View>
+              
+              <TouchableOpacity style={styles.btn}>
+                <Text style={styles.textoBtn} onPress={comecar}> Começar </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal Atual */}
+        <Modal animationType="fade" visible={this.state.modalAtual}>
+          <View style={styles.container}>
+            <View style={styles.header} >
+              <TouchableOpacity style={styles.btnHeader} onPress={this.outAtual}>
+                <Image 
+                  source={require('./src/seta.png')}
+                  style={styles.imgHeader}
+                  />
+              </TouchableOpacity>
+              <Text style={styles.titulo} >Atual</Text>
+              <TouchableOpacity style={styles.btnHeader}>
+                <Image 
+                source={require('./src/gear.png')}
+                style={styles.imgHeader}
+                />
+              </TouchableOpacity>
+            </View>
+            
+          </View>
+        </Modal>
+
+      </View>
+    );
+  }
+  
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#ee6a00',
+    // alignItems: 'center',
+    // justifyContent: 'center',
+  },
+  header:{
+    alignItems:'flex-start',
+    justifyContent:'space-between',
+    marginTop: 20,
+    flexDirection:'row'
+  },
+  imgHeader:{
+    width:70,
+    height:70,
+  },
+  titulo:{
+    marginTop:5,
+    fontSize:40,
+    fontWeight:'bold',
+  },
+  area:{
+    flex:1,
+    alignItems:'center',
+    justifyContent:'space-around',
+  },
+  btn:{
+    padding:10,
+    margin:10,
+    borderBottomColor:'#000',
+    borderBottomWidth:5,
+    borderRadius:15,
+    backgroundColor:'#ee8f00'
+  },
+  textoBtn:{
+    fontSize:40,
+    color: '#000',
+  },
+  subtitle:{
+    fontSize:35,
+    color: '#000',
+  },
+  areaInput:{
+    flexDirection:'row',
+  },
+  txt:{
+    fontSize:27,
+  },
+  input:{
+    height:32,
+    width:100,
+    borderWidth:1,
+    borderColor:'#222',
+    padding:2,
+  }
+
+});

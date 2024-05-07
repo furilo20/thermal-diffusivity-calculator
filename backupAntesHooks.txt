@@ -1,0 +1,555 @@
+import React, {Component, useState, useEffect} from 'react';
+import { StyleSheet, ScrollView, Text, View, TouchableOpacity, 
+  Image, Modal, TextInput, Alert, NativeEventEmitter, NativeModules, 
+  Platform, PermissionsAndroid, FlatList,
+  TouchableHighlight } from 'react-native';
+import BleManager from 'react-native-ble-manager';
+
+const BleManagerModule = NativeModules.BleManager;
+const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
+
+export default class App extends Component {
+  constructor(props){
+    super(props);
+    this.state={
+      modalHistorico:false,
+      modalNovaMedicao:false,
+      modalBluetooth:false,
+      modalAtual:false,
+      atualInativo:true,
+      tempInicial:22,
+      tempFinal:0,
+      tempo:0,
+      info: "", 
+      values: {},
+      data: '',
+    };
+    // BLE caracteristicas
+    this.ThermometerService  = "00000001-710e-4a5b-8d75-3e5b444bc3cf"
+    this.TempCharacteristic  = "00000002-710e-4a5b-8d75-3e5b444bc3cf"
+    this.UnitCharacteristic  = "00000003-710e-4a5b-8d75-3e5b444bc3cf"
+    this.StartCharacteristic = "00000004-710e-4a5b-8d75-3e5b444bc3cf"
+    this.DataCharacteristic  = "00000005-710e-4a5b-8d75-3e5b444bc3cf"
+
+    // modais
+    this.inHistorico = this.inHistorico.bind(this);
+    this.outHistorico = this.outHistorico.bind(this);
+    this.inBluetooth = this.inBluetooth.bind(this);
+    this.outBluetooth = this.outBluetooth.bind(this);
+    this.inNovaMedicao = this.inNovaMedicao.bind(this);
+    this.outNovaMedicao = this.outNovaMedicao.bind(this);
+    this.inAtual = this.inAtual.bind(this);
+    this.outAtual = this.outAtual.bind(this);
+    
+  }
+
+  // funcionamento dos modais
+  inAtual(){
+    this.setState({modalAtual:true});
+    this.setState({modalNovaMedicao:false});
+    //mudar depois, atualInativo apenas quando rodar e desligar quando acabar
+    this.setState({atualInativo:false});
+  }
+  outAtual(){
+    this.setState({modalAtual:false});
+  }
+  inNovaMedicao(){
+    this.setState({modalNovaMedicao:true});
+  }
+  outNovaMedicao(){
+    this.setState({modalNovaMedicao:false});
+  }
+  inHistorico(){
+    this.setState({modalHistorico:true});
+  }
+  outHistorico(){
+    this.setState({modalHistorico:false});
+  }
+  inBluetooth(){
+    this.setState({modalBluetooth:true});
+  }
+  outBluetooth(){
+    this.setState({modalBluetooth:false});
+  }
+  
+  // const [isScanning, setIsScanning] = useState(false);
+  // const peripherals = new Map();
+  // const [list, setList] = useState([]);
+  // useEffect(() => {
+  //   BleManager.start({showAlert: false});
+
+  //   bleManagerEmitter.addListener('BleManagerDiscoverPeripheral', handleDiscoverPeripheral);
+  //   bleManagerEmitter.addListener('BleManagerStopScan', handleStopScan);
+  //   bleManagerEmitter.addListener('BleManagerDisconnectPeripheral', handleDisconnectedPeripheral);
+  //   bleManagerEmitter.addListener('BleManagerDidUpdateValueForCharacteristic', handleUpdateValueForCharacteristic);
+
+  //   if(Platform.OS === 'android' && Platform.Version >= 23){
+  //     PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCES_FINE_LOCATION).then((result) => {
+  //       if(result){
+  //         console.log('Permission is OK');
+  //       } else {
+  //         PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCES_FINE_LOCATION).then((result) => {
+  //           if(result){
+  //             console.log('User accept');
+  //           }else{
+  //             console.log('User refuse');
+  //           }
+  //         });
+  //       }
+  //     })
+  //   }
+
+  //   return(() => {
+  //     console.log('unmount');
+  //     bleManagerEmitter.removeListener('BleManagerDiscoverPeripheral', handleDiscoverPeripheral);
+  //     bleManagerEmitter.removeListener('BleManagerStopScan', handleStopScan );
+  //     bleManagerEmitter.removeListener('BleManagerDisconnectPeripheral', handleDisconnectedPeripheral );
+  //     bleManagerEmitter.removeListener('BleManagerDidUpdateValueForCharacteristic', handleUpdateValueForCharacteristic );
+  //   })
+  // }, []);
+  
+  render(){
+
+    
+    // Scan
+    const startScan = () => {
+      if(!isScanning){
+        BleManager.scan([], 3, true).then((results) => {
+          console.log('Scanning...');
+          setIsScanning(true);
+        }).catch(err => {
+          console.error(err);
+        });
+      }
+    }
+    // stop scan
+    const handleStopScan = () => {
+      console.log('Scan is stopped');
+      setIsScanning(false);
+    }
+    // disconnect peripheral
+    const handleDisconnectedPeripheral = (data) => {
+      let peripheral = peripherals.get(data.peripheral);
+      if (peripheral) {
+        peripheral.connected = false;
+        peripherals.set(peripheral.id, peripheral);
+        setList(Array.from(peripherals.values()));
+      }
+      console.log('Disconnected from ' + data.peripheral);
+    }
+    //update value for characteristic
+    const handleUpdateValueForCharacteristic = (data) => {
+      console.log('Received data from ' + data.peripheral + ' characteristic ' + data.characteristic, data.value);
+    }
+    // retrieve connected - retorna conectados
+    const retrieveConnected = () => {
+      BleManager.getConnectedPeripherals([]).then((results) => {
+        if(results.length == 0){
+          console.log('No connected peripherals');
+        }
+        console.log(results);
+        for (var i = 0; i < results.length; i++){
+          var peripheral = results[i];
+          peripheral.connected = true;
+          peripherals.set(peripheral.id, peripheral);
+          setList(Array.from(peripherals.values()));
+        }
+      });
+    }
+    // discover peripherals
+    const handleDiscoverPeripheral = (peripheral) => {
+      console.log('Got ble peripheral', peripheral);
+      if (!peripheral.name) {
+        peripheral.name = "NO NAME";
+      }
+      peripherals.set(peripheral.id, peripheral);
+      setList(Array.from(peripherals.values()));
+    }
+    // test peripheral
+    const testPeripheral = (peripheral) => {
+      if(peripheral){
+        if(peripheral.connected){
+          BleManager.disconnect(peripheral.id);
+        }else{
+          BleManager.connect(peripheral.id).then(() => {
+            let p = peripherals.get(peripheral.id);
+            if (p) {
+              p.connected =true;
+              peripherals.set(peripherals.id, p);
+              setList(Array.from(peripherals.values()));
+            }
+            console.log('Connected to ' + peripheral.id);
+
+            setTimeout(() => {
+              // test read current RSSI value
+              BleManager.retrieveServices(peripheral.id).then((peripheralData) => {
+                console.log('Retrieved peripheral services', peripheralData);
+
+                BleManager.readRSSI(peripheral.id).then((rssi) => {
+                  console.log('Retrieved actual RSSI value', rssi);
+                  let p = peripherals.get(peripheral.id);
+                  if (p) {
+                    p.rssi = rssi;
+                    peripherals.set(peripheral.id, p);
+                    setList(Array.from(peripherals.values()));
+                  }
+                });
+              });
+              // Test using bleno's pizza example
+              // https://github.com/sandeepmistry/bleno/tree/master/examples/pizza
+              /*
+              BleManager.retrieveServices(peripheral.id).then((peripheralInfo) => {
+                console.log(peripheralInfo);
+                var service = '13333333-3333-3333-3333-333333333337';
+                var bakeCharacteristic = '13333333-3333-3333-3333-333333330003';
+                var crustCharacteristic = '13333333-3333-3333-3333-333333330001';
+
+                setTimeout(() => {
+                  BleManager.startNotification(peripheral.id, service, bakeCharacteristic).then(() => {
+                    console.log('Started notification on ' + peripheral.id);
+                    setTimeout(() => {
+                      BleManager.write(peripheral.id, service, crustCharacteristic, [0]).then(() => {
+                        console.log('Writed NORMAL crust');
+                        BleManager.write(peripheral.id, service, bakeCharacteristic, [1,95]).then(() => {
+                          console.log('Writed 351 temperature, the pizza should be BAKED');
+                          
+                          //var PizzaBakeResult = {
+                          //  HALF_BAKED: 0,
+                          //  BAKED:      1,
+                          //  CRISPY:     2,
+                          //  BURNT:      3,
+                          //  ON_FIRE:    4
+                          //};
+                        });
+                      });
+
+                    }, 500);
+                  }).catch((error) => {
+                    console.log('Notification error', error);
+                  });
+                }, 200);
+              });*/
+            }, 900);
+          }).catch((error) => {
+            console.log('Connected error', error);
+          });
+        }
+      }
+    }
+
+    // render bluetooth itens
+    const renderItem = (item) => {
+      const color = item.connected ? '#00ff55' : '#fff';
+      return(
+        <TouchableHighlight onPress={() => testPeripheral(item) }>
+          <View style={[styles.row, {backgroundColor: color}]}>
+            <Text style={{fontSize: 12, textAlign: 'center', color: '#333333', padding: 10}}>{item.name}</Text>
+            <Text style={{fontSize: 10, textAlign: 'center', color: '#333333', padding: 2}}>{item.rssi}</Text>
+            <Text style={{fontSize: 8, textAlign: 'center', color: '#333333', padding: 2, paddingBottom:20}}>{item.id}</Text>
+          </View>
+        </TouchableHighlight>
+      );
+    }
+
+    function comecar(){
+      let time = this.state.tempo;
+      let tempeFinal = this.state.tempFinal;
+      if (time > 0 && tempeFinal >= 33) {
+        this.setState ({data : this.state.tempo + ' ' + this.state.tempFinal});
+        this.inAtual();
+      }
+      else{
+        Alert.alert('Atenção','Por favor tempo maior que zero e temperatura final acima da ambiente',[
+          {text: 'Entendido', onPress:() => console.log('alert closed')}
+        ]);
+      }
+    }
+    return (
+      <View style={styles.container}>
+        
+        {/* Menu de inicio */}
+        <View style={styles.header} >
+          <TouchableOpacity style={styles.btnHeader}>
+            <Image 
+            source={require('./src/menu.png')}
+            style={styles.imgHeader}
+            />
+          </TouchableOpacity>
+          <Text style={styles.titulo} > MeDifusi </Text>
+          <TouchableOpacity style={styles.btnHeader}>
+            <Image 
+            source={require('./src/gear.png')}
+            style={styles.imgHeader}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.area}>
+          <TouchableOpacity style={styles.btn}>
+            <Text style={styles.textoBtn} onPress={this.inBluetooth}> Bluetooth </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btn}>
+            <Text style={styles.textoBtn} onPress={this.inNovaMedicao} > Nova Medição </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btn}>
+            <Text style={styles.textoBtn} onPress={this.inHistorico}> Histórico </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btn} onPress={this.inAtual} disabled={this.state.atualInativo} >
+            <Text style={styles.textoBtn}> Atual </Text>
+          </TouchableOpacity>
+          <View >
+            <View>
+              <Text> {this.state.info}</Text>
+              <Text>{this.state.info}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Modal Historico */}
+        <Modal animationType="fade" visible={this.state.modalHistorico}>
+          <View style={styles.container}>
+            <View style={styles.header} >
+              <TouchableOpacity style={styles.btnHeader} onPress={this.outHistorico}>
+                <Image 
+                  source={require('./src/seta.png')}
+                  style={styles.imgHeader}
+                  />
+              </TouchableOpacity>
+              <Text style={styles.titulo} >Historico</Text>
+              <TouchableOpacity style={styles.btnHeader}>
+                <Image 
+                source={require('./src/gear.png')}
+                style={styles.imgHeader}
+                />
+              </TouchableOpacity>
+            </View>
+            <View >
+              <Text > Dados historico .....</Text>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal Bluetooth */}
+        <Modal animationType="fade" visible={this.state.modalBluetooth}>
+          <View style={styles.container}>
+            <View style={styles.header} >
+              <TouchableOpacity style={styles.btnHeader} onPress={this.outBluetooth}>
+                <Image 
+                  source={require('./src/seta.png')}
+                  style={styles.imgHeader}
+                  />
+              </TouchableOpacity>
+              <Text style={styles.titulo} >Historico</Text>
+              <TouchableOpacity style={styles.btnHeader}>
+                <Image 
+                source={require('./src/gear.png')}
+                style={styles.imgHeader}
+                />
+              </TouchableOpacity>
+            </View>
+            <View >
+              <ScrollView
+                contentInsetAdjustmentBehavior="automatic"
+                style={styles.scrollView}>
+                {global.HermesInternal == null ? null : (
+                  <View style={styles.engine}>
+                    <Text style={styles.footer}>Engine: Hermes</Text>
+                  </View>
+                )}
+                <View style={styles.body}>
+                  
+                  <View style={{margin: 10}}>
+                    <Button 
+                      title={'Scan Bluetooth (' + (isScanning ? 'on' : 'off') + ')'}
+                      onPress={() => startScan() } 
+                    />            
+                  </View>
+
+                  <View style={{margin: 10}}>
+                    <Button title="Retrieve connected peripherals" onPress={() => retrieveConnected() } />
+                  </View>
+
+                  {(list.length == 0) &&
+                    <View style={{flex:1, margin: 20}}>
+                      <Text style={{textAlign: 'center'}}>No peripherals</Text>
+                    </View>
+                  }
+                
+                </View>              
+              </ScrollView>
+              <FlatList
+                data={list}
+                renderItem={({ item }) => renderItem(item) }
+                keyExtractor={item => item.id}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal Nova Medição */}
+        <Modal animationType="fade" visible={this.state.modalNovaMedicao}>
+          <View style={styles.container}>
+            <View style={styles.header} >
+              <TouchableOpacity style={styles.btnHeader} onPress={this.outNovaMedicao}>
+                <Image 
+                  source={require('./src/seta.png')}
+                  style={styles.imgHeader}
+                  />
+              </TouchableOpacity>
+              <Text style={styles.titulo} >Nova Medição</Text>
+              <TouchableOpacity style={styles.btnHeader}>
+                <Image 
+                source={require('./src/gear.png')}
+                style={styles.imgHeader}
+                />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.area}>
+              {/* <Text style={styles.subtitle}>Preencha os campos</Text> */}
+              <View style={styles.areaInput}>
+                <Text style={styles.txt}>Temperatura Inicial: </Text>
+                <Text style={styles.txt}>{this.state.tempInicial}ºC</Text>
+              </View>
+              <View style={styles.areaInput}>
+                <Text style={styles.txt}>Temperatura Final: </Text>
+                <TextInput style={styles.input} placeholder="ºC"
+                keyboardType="numeric"
+                onChangeText={(texto) => this.setState({tempFinal:texto})}
+                />
+              </View>
+              <View style={styles.areaInput}>
+                <Text style={styles.txt}>Tempo: </Text>
+                <TextInput style={styles.input} placeholder="minutos"
+                keyboardType="numeric"
+                onChangeText={(texto) => this.setState({tempo:texto})}
+                />
+              </View>
+              
+              <TouchableOpacity style={styles.btn}>
+                <Text style={styles.textoBtn} onPress={comecar}> Começar </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal Atual */}
+        <Modal animationType="fade" visible={this.state.modalAtual}>
+          <View style={styles.container}>
+            <View style={styles.header} >
+              <TouchableOpacity style={styles.btnHeader} onPress={this.outAtual}>
+                <Image 
+                  source={require('./src/seta.png')}
+                  style={styles.imgHeader}
+                  />
+              </TouchableOpacity>
+              <Text style={styles.titulo} >Atual</Text>
+              <TouchableOpacity style={styles.btnHeader}>
+                <Image 
+                source={require('./src/gear.png')}
+                style={styles.imgHeader}
+                />
+              </TouchableOpacity>
+            </View>
+            
+          </View>
+        </Modal>
+
+      </View>
+    );
+  }
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#ee6a00',
+    // alignItems: 'center',
+    // justifyContent: 'center',
+  },
+  header:{
+    alignItems:'flex-start',
+    justifyContent:'space-between',
+    marginTop: 20,
+    flexDirection:'row'
+  },
+  imgHeader:{
+    width:70,
+    height:70,
+  },
+  titulo:{
+    marginTop:5,
+    fontSize:40,
+    fontWeight:'bold',
+  },
+  area:{
+    flex:1,
+    alignItems:'center',
+    justifyContent:'space-around',
+  },
+  btn:{
+    padding:10,
+    margin:10,
+    borderBottomColor:'#000',
+    borderBottomWidth:5,
+    borderRadius:15,
+    backgroundColor:'#ee8f00'
+  },
+  textoBtn:{
+    fontSize:40,
+    color: '#000',
+  },
+  subtitle:{
+    fontSize:35,
+    color: '#000',
+  },
+  areaInput:{
+    flexDirection:'row',
+  },
+  txt:{
+    fontSize:27,
+  },
+  input:{
+    height:32,
+    width:100,
+    borderWidth:1,
+    borderColor:'#222',
+    padding:2,
+  },
+  scrollView: {
+    backgroundColor: '#c0c0c0',
+  },
+  engine: {
+    position: 'absolute',
+    right: 0,
+  },
+  body: {
+    backgroundColor: '#fff',
+  },
+  sectionContainer: {
+    marginTop: 32,
+    paddingHorizontal: 24,
+  },
+  sectionTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#000',
+  },
+  sectionDescription: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: '400',
+    color: '#000',
+  },
+  highlight: {
+    fontWeight: '700',
+  },
+  footer: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: '600',
+    padding: 4,
+    paddingRight: 12,
+    textAlign: 'right',
+  },
+
+});
